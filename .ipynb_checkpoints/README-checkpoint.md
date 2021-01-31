@@ -22,13 +22,35 @@ The architecture is like the image below:
 
 ![image](img/folders_files.png)
 
-# How Execute scripts
+# Services Hosts
 
-### Producers
-* `simulation.py`
+![hosts](img/hosts.png)
 
-### Consumers
-* `faust -A faust_stream worker -l info`
-* `python ksql.py`
-* `python server.py`
+# About Scripts Execution
 
+**Producer**
+1. `cd producers`
+2. `python simulation.py`
+
+**Consumers**
+
+To run the Faust Stream Processing Application:
+
+1. `cd consumers`
+2. `faust -A faust_stream worker -l info`
+
+To run the KSQL Creation Script:
+
+1. `cd consumers`
+2. `python ksql.py`
+
+To run the consumer
+
+1. `cd consumers`
+2. `python server.py`
+
+**Web Page**
+
+To see the web page just execute the command below after already had executed all commands above. The index.html will appear in the workspace.
+
+`wget http://localhost:8889`
