@@ -1,3 +1,4 @@
+
 """Defines core consumer functionality"""
 import logging
 
@@ -36,18 +37,36 @@ class KafkaConsumer:
         # and use the Host URL for Kafka and Schema Registry!
         #
         #
+        # Use the Avro Consumer
+        # See: https://docs.confluent.io/current/clients/confluent-kafka-python/index.html?highlight=loads#confluent_kafka.avro.AvroConsumer
+
         self.broker_properties = {
-            'bootstrap.servers': 'PLAINTEXT://localhost:9094',
-            'group.id': topic_name_pattern,
-            'default.topic.config': {'auto.offset.reset': 'earliest'}
+                #
+                # TODO
+                "bootstrap.servers" : "PLAINTEXT://localhost:9092,PLAINTEXT://localhost:9093,PLAINTEXT://localhost:9094", 
+                # TODO
+                "group.id": f"{self.topic_name_pattern}",
+                # TODO see details for config : https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+                #  Consumer Offset is number stored in a private Kafka topic which identifies the last consumed message for a consumer
+                "default.topic.config": 
+                {
+                    "acks": "all", 
+                    "auto.offset.reset" : "earliest"
+                },
         }
+            
 
         # TODO: Create the Consumer, using the appropriate type.
         if is_avro is True:
-            self.broker_properties["schema.registry.url"] = "http://localhost:8081"
+            self.broker_properties["schema.registry.url"] = "http://localhost:8081" 
+            # running in docker
+            # check confluent schema-registry on Docker Hub at https://hub.docker.com/r/confluent/schema-registry
+            # Schema Registry expose port 8081 for use by the host machine
+            #self.broker_properties["schema.registry.url"] = "http://schema-registry:8081/"  
             self.consumer = AvroConsumer(self.broker_properties)
         else:
             self.consumer = Consumer(self.broker_properties)
+            #pass
 
         #
         #
@@ -55,29 +74,27 @@ class KafkaConsumer:
         # how the `on_assign` callback should be invoked.
         #
         #
-        self.consumer.subscribe( [topic_name_pattern], on_assign=self.on_assign )
+        self.consumer.subscribe( [self.topic_name_pattern], on_assign = self.on_assign )
 
     def on_assign(self, consumer, partitions):
         """Callback for when topic assignment takes place"""
         # TODO: If the topic is configured to use `offset_earliest` set the partition offset to
         # the beginning or earliest
-        logger.info("on_assign is incomplete - skipping")
+        #logger.info("on_assign is incomplete - skipping")
         for partition in partitions:
-            #
-            #
-            # TODO
-            #
-            #
-            consumer.seek(partition)
+            if self.offset_earliest is True:
+                partition.offset = confluent_kafka.OFFSET_BEGINNING
         logger.info("partitions assigned for %s", self.topic_name_pattern)
         consumer.assign(partitions)
 
     async def consume(self):
         """Asynchronously consumes data from kafka topic"""
         while True:
+            logger.info("Consume")
             num_results = 1
             while num_results > 0:
                 num_results = self._consume()
+            logger.info(f"Waiting for new messages in topic {self.topic_name_pattern}")    
             await gen.sleep(self.sleep_secs)
 
     def _consume(self):
@@ -89,13 +106,40 @@ class KafkaConsumer:
         # is retrieved.
         #
         #
+        #logger.info("_consume is incomplete - skipping")
+        #return 0
         try:
-            message = self.consumer.poll(1.0)
-        except SerializerError as er:
-            logger.error(f"Error while consuming data: {er.message}")
+            message = self.consumer.poll(timeout=1.0)
+            #logger.info(message)
+            #logger.info(f"Processing topic {message.value()}")
+            if message is not None:
+                logger.info(f"Received message {message.value()}")
+                if message.error() is None:
+                    self.message_handler(message)
+                    return 1
+                else:
+                    logger.error(message.error())
+                    return 0
+#                 if message.error() is not None:
+#                     logger.info(f"Processing {message.value()}")
+#                     self.message_handler(message)
+#                     return 1
+#                 elif message.error().code() != KafkaError._PARTITION_EOF:
+#                     logger.info(f"Error")
+#                     logger.error(message.error())
+#                     return 0
+#                 else:
+#                     logger.info(f"Could not process {message.value()}")
+#                 logger.info("HELLLO")    
+            else:
+                logger.info("no message received by consumer")
+                return 0
+        except SerializerError as e:
+            logger.error(f"Message deserialization failed for {message} : {e}")
             return 0
-        self.message_handler(message)
-        return 1
+        except e:
+            logger.error(f"Error {message} : {e}")
+            return 0
 
 
     def close(self):
@@ -105,4 +149,5 @@ class KafkaConsumer:
         # TODO: Cleanup the kafka consumer
         #
         #
+        logger.info("Closing down consumer to commit final offsets")
         self.consumer.close()
